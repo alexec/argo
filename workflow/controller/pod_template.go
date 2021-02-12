@@ -14,7 +14,7 @@ func (woc *wfOperationCtx) executePod(ctx context.Context, nodeName string, temp
 		node = woc.initializeExecutableNode(nodeName, wfv1.NodeTypePod, templateScope, tmpl, orgTmpl, opts.boundaryID, wfv1.NodePending)
 	}
 
-	_, err := woc.createWorkflowPod2(ctx, nodeName, tmpl.Pod.GetContainers(), tmpl, &createWorkflowPodOpts{
+	_, err := woc.createWorkflowPod(ctx, nodeName, tmpl.Pod.GetContainers(), tmpl, &createWorkflowPodOpts{
 		includeScriptOutput: tmpl.HasOutput(),
 		onExitPod:           opts.onExitTemplate,
 		executionDeadline:   opts.executionDeadline,

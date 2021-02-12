@@ -17,10 +17,6 @@ var (
 		met, _ := None(K8SAPI, Kubelet)(s)
 		return met, "base layer artifact support"
 	}
-	StopTerminate Need = func(s *E2ESuite) (bool, string) {
-		met, _ := None(K8SAPI, Kubelet)(s)
-		return met, "stop/terminate" // these do not work in tests, they use `sh -c "kill -15 1"`, but argosay has no sh command it it
-	}
 	Offloading Need = func(s *E2ESuite) (bool, string) {
 		return s.Persistence.IsEnabled(), "offloading enabled"
 	}

@@ -102,7 +102,6 @@ func ExecPodContainer(restConfig *rest.Config, namespace string, pod string, con
 
 	log.Info(execRequest.URL())
 	exec, err := remotecommand.NewSPDYExecutor(restConfig, "POST", execRequest.URL())
-	log.WithError(err).Info("command executed")
 	if err != nil {
 		return nil, errors.InternalWrapError(err)
 	}

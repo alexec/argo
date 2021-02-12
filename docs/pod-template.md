@@ -28,7 +28,7 @@ spec:
         volumeMounts:
           - mountPath: /workspace
             name: workspace
-        tasks:
+        graph:
           - name: a
             image: argoproj/argosay:v2
             args: [ echo, hello, /mnt/share/message ]

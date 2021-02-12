@@ -192,23 +192,12 @@ type TTLStrategy struct {
 	SecondsAfterFailure *int32 `json:"secondsAfterFailure,omitempty" protobuf:"bytes,3,opt,name=secondsAfterFailure"`
 }
 
-type Templates []Template
-
-func (t Templates) FindByName(name string) *Template {
-	for _, x := range t {
-		if x.Name == name {
-			return &x
-		}
-	}
-	return nil
-}
-
 // WorkflowSpec is the specification of a Workflow.
 type WorkflowSpec struct {
 	// Templates is a list of workflow templates used in a workflow
 	// +patchStrategy=merge
 	// +patchMergeKey=name
-	Templates Templates `json:"templates,omitempty" patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,1,opt,name=templates"`
+	Templates []Template `json:"templates,omitempty" patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,1,opt,name=templates"`
 
 	// Entrypoint is a template reference to the starting point of the workflow.
 	Entrypoint string `json:"entrypoint,omitempty" protobuf:"bytes,2,opt,name=entrypoint"`
@@ -2159,8 +2148,8 @@ func (tmpl *Template) IsLeaf() bool {
 	return false
 }
 
-func (tmpl *Template) IsUserContainerName(containerName string) bool {
-	for _, c := range tmpl.GetUserContainerNames() {
+func (tmpl *Template) IsMainContainerName(containerName string) bool {
+	for _, c := range tmpl.GetMainContainerNames() {
 		if c == containerName {
 			return true
 		}
@@ -2168,7 +2157,7 @@ func (tmpl *Template) IsUserContainerName(containerName string) bool {
 	return false
 }
 
-func (tmpl *Template) GetUserContainerNames() []string {
+func (tmpl *Template) GetMainContainerNames() []string {
 	if tmpl != nil && tmpl.Pod != nil {
 		out := make([]string, 0)
 		for _, c := range tmpl.Pod.GetContainers() {
@@ -2184,7 +2173,7 @@ func (tmpl *Template) GetVolumeMounts() []apiv1.VolumeMount {
 	if tmpl.Container != nil {
 		return tmpl.Container.VolumeMounts
 	} else if tmpl.Script != nil {
-		return tmpl.Script.Container.VolumeMounts
+		return tmpl.Script.VolumeMounts
 	} else if tmpl.Pod != nil {
 		return tmpl.Pod.VolumeMounts
 	}

@@ -1308,7 +1308,7 @@ func (woc *wfOperationCtx) inferFailedReason(pod *apiv1.Pod) (wfv1.NodePhase, st
 		switch {
 		case n == common.InitContainerName:
 			return 0
-		case tmpl.IsUserContainerName(n):
+		case tmpl.IsMainContainerName(n):
 			return 1
 		case n == common.WaitContainerName:
 			return 2
@@ -1344,7 +1344,7 @@ func (woc *wfOperationCtx) inferFailedReason(pod *apiv1.Pod) (wfv1.NodePhase, st
 		switch {
 		case ctr.Name == common.InitContainerName:
 			return wfv1.NodeError, msg
-		case tmpl.IsUserContainerName(ctr.Name):
+		case tmpl.IsMainContainerName(ctr.Name):
 			return wfv1.NodeFailed, msg
 		case ctr.Name == common.WaitContainerName:
 			// executor is expected to annotate a message to the pod upon any errors.
@@ -1944,8 +1944,11 @@ func (woc *wfOperationCtx) hasDaemonNodes() bool {
 
 func (woc *wfOperationCtx) findTemplate(pod *apiv1.Pod) *wfv1.Template {
 	nodeName := pod.Annotations[common.AnnotationKeyNodeName]
-	node := woc.wf.Status.Nodes[woc.wf.NodeID(nodeName)]
-	return woc.execWf.Spec.Templates.FindByName(node.TemplateName)
+	node := woc.wf.GetNodeByName(nodeName)
+	if node == nil {
+		return nil // I don't expect this to happen in production, just in tests
+	}
+	return woc.wf.GetTemplateByName(node.TemplateName)
 }
 
 func (woc *wfOperationCtx) markWorkflowRunning(ctx context.Context) {
@@ -2225,7 +2228,7 @@ func (woc *wfOperationCtx) executeContainer(ctx context.Context, nodeName string
 	}
 
 	woc.log.Debugf("Executing node %s with container template: %v\n", nodeName, tmpl)
-	_, err = woc.createWorkflowPod(ctx, nodeName, *tmpl.Container, tmpl, &createWorkflowPodOpts{
+	_, err = woc.createWorkflowPod(ctx, nodeName, []apiv1.Container{*tmpl.Container}, tmpl, &createWorkflowPodOpts{
 		includeScriptOutput: includeScriptOutput,
 		onExitPod:           opts.onExitTemplate,
 		executionDeadline:   opts.executionDeadline,
@@ -2358,7 +2361,7 @@ func (woc *wfOperationCtx) executeScript(ctx context.Context, nodeName string, t
 
 	mainCtr := tmpl.Script.Container
 	mainCtr.Args = append(mainCtr.Args, common.ExecutorScriptSourcePath)
-	_, err = woc.createWorkflowPod(ctx, nodeName, mainCtr, tmpl, &createWorkflowPodOpts{
+	_, err = woc.createWorkflowPod(ctx, nodeName, []apiv1.Container{mainCtr}, tmpl, &createWorkflowPodOpts{
 		includeScriptOutput: includeScriptOutput,
 		onExitPod:           opts.onExitTemplate,
 		executionDeadline:   opts.executionDeadline,
@@ -2655,7 +2658,7 @@ func (woc *wfOperationCtx) executeResource(ctx context.Context, nodeName string,
 
 	mainCtr := woc.newExecContainer(common.MainContainerName, tmpl)
 	mainCtr.Command = []string{"argoexec", "resource", tmpl.Resource.Action}
-	_, err := woc.createWorkflowPod(ctx, nodeName, *mainCtr, tmpl, &createWorkflowPodOpts{onExitPod: opts.onExitTemplate, executionDeadline: opts.executionDeadline})
+	_, err := woc.createWorkflowPod(ctx, nodeName, []apiv1.Container{*mainCtr}, tmpl, &createWorkflowPodOpts{onExitPod: opts.onExitTemplate, executionDeadline: opts.executionDeadline})
 	if err != nil {
 		return woc.requeueIfTransientErr(err, node.Name)
 	}
