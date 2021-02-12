@@ -70,6 +70,31 @@ func NewEmissaryCommand() *cobra.Command {
 				return fmt.Errorf("failed to unmarshal template: %w", err)
 			}
 
+			if template.Pod != nil {
+				for _, x := range template.Pod.GetGraph() {
+					if x.Name == containerName {
+						for _, y := range x.Dependencies {
+							println(fmt.Sprintf("waiting for dependency %q", y))
+							for {
+								data, err := ioutil.ReadFile(varArgo + "/ctr/" + y + "/exitcode")
+								if os.IsNotExist(err) {
+									time.Sleep(2 * time.Second)
+									continue
+								}
+								exitCode, err := strconv.Atoi(string(data))
+								if err != nil {
+									return fmt.Errorf("failed to read exit-code of dependency %q: %w", y, err)
+								}
+								if exitCode != 0 {
+									return fmt.Errorf("dependency %q exited with non-zero code: %d", y, exitCode)
+								}
+								break
+							}
+						}
+					}
+				}
+			}
+
 			name, err = path.Search(name)
 			if err != nil {
 				return fmt.Errorf("failed to find name in PATH: %w", err)
