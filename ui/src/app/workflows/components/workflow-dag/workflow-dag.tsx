@@ -37,7 +37,7 @@ function nodeLabel(n: NodeStatus) {
         icon: icons[phase] || icons.Pending,
         progress: phase === 'Running' && progress(n),
         classNames: phase,
-        tags: new Set([n.templateName])
+        tags: n.templateName && new Set([n.templateName])
     };
 }
 

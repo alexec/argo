@@ -7,6 +7,7 @@ import (
 
 	"github.com/argoproj/pkg/cli"
 	kubecli "github.com/argoproj/pkg/kube/cli"
+	"github.com/prometheus/common/version"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/kubernetes"
@@ -20,6 +21,7 @@ import (
 	"github.com/argoproj/argo-workflows/v3/workflow/common"
 	"github.com/argoproj/argo-workflows/v3/workflow/executor"
 	"github.com/argoproj/argo-workflows/v3/workflow/executor/docker"
+	"github.com/argoproj/argo-workflows/v3/workflow/executor/emissary"
 	"github.com/argoproj/argo-workflows/v3/workflow/executor/k8sapi"
 	"github.com/argoproj/argo-workflows/v3/workflow/executor/kubelet"
 	"github.com/argoproj/argo-workflows/v3/workflow/executor/pns"
@@ -59,6 +61,7 @@ func NewRootCommand() *cobra.Command {
 		},
 	}
 
+	command.AddCommand(NewEmissaryCommand())
 	command.AddCommand(NewInitCommand())
 	command.AddCommand(NewResourceCommand())
 	command.AddCommand(NewWaitCommand())
@@ -73,10 +76,9 @@ func NewRootCommand() *cobra.Command {
 }
 
 func initExecutor() *executor.WorkflowExecutor {
-	version := argo.GetVersion()
-	log.WithField("version", version).Info("Starting Workflow Executor")
-	config, err := clientConfig.ClientConfig()
 	executorType := os.Getenv(common.EnvVarContainerRuntimeExecutor)
+	log.WithFields(log.Fields{"version": argo.GetVersion().Version, "executorType": executorType}).Info("Starting Workflow Executor")
+	config, err := clientConfig.ClientConfig()
 	config = restclient.AddUserAgent(config, fmt.Sprintf("argo-workflows/%s executor/%s", version.Version, executorType))
 	checkErr(err)
 
@@ -104,6 +106,8 @@ func initExecutor() *executor.WorkflowExecutor {
 		cre, err = kubelet.NewKubeletExecutor(namespace, podName)
 	case common.ContainerRuntimeExecutorPNS:
 		cre, err = pns.NewPNSExecutor(clientset, podName, namespace)
+	case common.ContainerRuntimeExecutorEmissary:
+		cre, err = emissary.New()
 	default:
 		cre, err = docker.NewDockerExecutor(namespace, podName)
 	}

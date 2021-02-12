@@ -437,18 +437,18 @@ func (ctx *templateValidationCtx) validateTemplateHolder(tmplHolder wfv1.Templat
 // validateTemplateType validates that only one template type is defined
 func validateTemplateType(tmpl *wfv1.Template) error {
 	numTypes := 0
-	for _, tmplType := range []interface{}{tmpl.Container, tmpl.Steps, tmpl.Script, tmpl.Resource, tmpl.DAG, tmpl.Suspend} {
+	for _, tmplType := range []interface{}{tmpl.Container, tmpl.Pod, tmpl.Steps, tmpl.Script, tmpl.Resource, tmpl.DAG, tmpl.Suspend} {
 		if !reflect.ValueOf(tmplType).IsNil() {
 			numTypes++
 		}
 	}
 	switch numTypes {
 	case 0:
-		return errors.Errorf(errors.CodeBadRequest, "templates.%s template type unspecified. choose one of: container, steps, script, resource, dag, suspend, template, template ref", tmpl.Name)
+		return errors.Errorf(errors.CodeBadRequest, "templates.%s template type unspecified. choose one of: container, pod, steps, script, resource, dag, suspend, template, template ref", tmpl.Name)
 	case 1:
 		// Do nothing
 	default:
-		return errors.Errorf(errors.CodeBadRequest, "templates.%s multiple template types specified. choose one of: container, steps, script, resource, dag, suspend, template, template ref", tmpl.Name)
+		return errors.Errorf(errors.CodeBadRequest, "templates.%s multiple template types specified. choose one of: container, pod, steps, script, resource, dag, suspend, template, template ref", tmpl.Name)
 	}
 	return nil
 }
@@ -809,7 +809,7 @@ func (ctx *templateValidationCtx) addOutputsToScope(tmpl *wfv1.Template, prefix 
 	if tmpl.Daemon != nil && *tmpl.Daemon {
 		scope[fmt.Sprintf("%s.ip", prefix)] = true
 	}
-	if tmpl.Script != nil || tmpl.Container != nil {
+	if tmpl.HasOutput() {
 		scope[fmt.Sprintf("%s.outputs.result", prefix)] = true
 		scope[fmt.Sprintf("%s.exitCode", prefix)] = true
 	}
@@ -843,7 +843,7 @@ func (ctx *templateValidationCtx) addOutputsToScope(tmpl *wfv1.Template, prefix 
 		switch tmpl.GetType() {
 		// Not that we don't also include TemplateTypeContainer here, even though it uses `outputs.result` it uses
 		// `outputs.parameters` as its aggregator.
-		case wfv1.TemplateTypeScript:
+		case wfv1.TemplateTypeScript, wfv1.TemplateTypePod:
 			scope[fmt.Sprintf("%s.outputs.result", prefix)] = true
 			scope[fmt.Sprintf("%s.exitCode", prefix)] = true
 		default:
@@ -900,7 +900,7 @@ func validateOutputs(scope map[string]interface{}, tmpl *wfv1.Template) error {
 		if param.ValueFrom != nil {
 			tmplType := tmpl.GetType()
 			switch tmplType {
-			case wfv1.TemplateTypeContainer, wfv1.TemplateTypeScript:
+			case wfv1.TemplateTypeContainer, wfv1.TemplateTypePod, wfv1.TemplateTypeScript:
 				if param.ValueFrom.Path == "" {
 					return errors.Errorf(errors.CodeBadRequest, "%s.path must be specified for %s templates", paramRef, tmplType)
 				}
@@ -931,30 +931,19 @@ func (ctx *templateValidationCtx) validateBaseImageOutputs(tmpl *wfv1.Template) 
 		return nil
 	}
 	switch ctx.ContainerRuntimeExecutor {
-	case "", common.ContainerRuntimeExecutorDocker:
-		// docker executor supports all modes of artifact outputs
 	case common.ContainerRuntimeExecutorPNS:
 		// pns supports copying from the base image, but only if there is no volume mount underneath it
 		errMsg := "pns executor does not support outputs from base image layer with volume mounts. Use an emptyDir: https://argoproj.github.io/argo-workflows/empty-dir/"
 		for _, out := range tmpl.Outputs.Artifacts {
 			if common.FindOverlappingVolume(tmpl, out.Path) == nil {
 				// output is in the base image layer. need to verify there are no volume mounts under it
-				if tmpl.Container != nil {
-					for _, volMnt := range tmpl.Container.VolumeMounts {
-						if strings.HasPrefix(volMnt.MountPath, out.Path+"/") {
-							return errors.Errorf(errors.CodeBadRequest, "templates.%s.outputs.artifacts.%s: %s", tmpl.Name, out.Name, errMsg)
-						}
-					}
-
-				}
-				if tmpl.Script != nil {
-					for _, volMnt := range tmpl.Script.VolumeMounts {
-						if strings.HasPrefix(volMnt.MountPath, out.Path+"/") {
-							return errors.Errorf(errors.CodeBadRequest, "templates.%s.outputs.artifacts.%s: %s", tmpl.Name, out.Name, errMsg)
-						}
+				for _, volMnt := range tmpl.GetVolumeMounts() {
+					if strings.HasPrefix(volMnt.MountPath, out.Path+"/") {
+						return errors.Errorf(errors.CodeBadRequest, "templates.%s.outputs.artifacts.%s: %s", tmpl.Name, out.Name, errMsg)
 					}
 				}
 			}
+
 		}
 	case common.ContainerRuntimeExecutorK8sAPI, common.ContainerRuntimeExecutorKubelet:
 		// for kubelet/k8s fail validation if we detect artifact is copied from base image layer

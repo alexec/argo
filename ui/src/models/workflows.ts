@@ -293,6 +293,10 @@ export interface SidecarOptions {
     mirrorVolumeMounts?: boolean;
 }
 
+export interface GraphNode extends kubernetes.Container {
+    dependencies?: string[];
+}
+
 /**
  * Template is a reusable and composable unit of execution in a workflow
  */
@@ -310,6 +314,11 @@ export interface Template {
      * Container is the main container image to run in the pod
      */
     container?: kubernetes.Container;
+
+    pod?: {
+        sequence: kubernetes.Container[];
+        graph: GraphNode[];
+    };
     /**
      * Deamon will allow a workflow to proceed to the next step so long as the container reaches readiness
      */
@@ -415,7 +424,7 @@ export interface Workflow {
 
 export const execSpec = (w: Workflow) => Object.assign({}, w.status.storedWorkflowTemplateSpec, w.spec);
 
-export type NodeType = 'Pod' | 'Steps' | 'StepGroup' | 'DAG' | 'Retry' | 'Skipped' | 'TaskGroup' | 'Suspend';
+export type NodeType = 'Pod' | 'Container' | 'Steps' | 'StepGroup' | 'DAG' | 'Retry' | 'Skipped' | 'TaskGroup' | 'Suspend';
 
 export interface NodeStatus {
     /**

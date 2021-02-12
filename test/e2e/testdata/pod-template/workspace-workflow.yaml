@@ -1,0 +1,39 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: workspace-
+  labels:
+    argo-e2e: "true"
+spec:
+  entrypoint: main
+  templates:
+    - name: main
+      inputs:
+        artifacts:
+          - name: in-0
+            path: /workspace/in-0
+            raw:
+              data: x
+      volumes:
+        - name: workspace
+          emptyDir: { }
+      pod:
+        volumeMounts:
+          - mountPath: /workspace
+            name: workspace
+        graph:
+          - name: a
+            image: argoproj/argosay:v2
+            args: [echo, hi, /workspace/out-0]
+          - name: main
+            image: argoproj/argosay:v2
+            dependencies:
+              - a
+      outputs:
+        parameters:
+          - name: out-0
+            valueFrom:
+              path: /workspace/out-0
+        artifacts:
+          - name: out-0
+            path: /workspace/out-0

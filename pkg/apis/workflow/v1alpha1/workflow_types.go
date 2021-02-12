@@ -26,6 +26,7 @@ type TemplateType string
 // Possible template types
 const (
 	TemplateTypeContainer TemplateType = "Container"
+	TemplateTypePod       TemplateType = "Pod"
 	TemplateTypeSteps     TemplateType = "Steps"
 	TemplateTypeScript    TemplateType = "Script"
 	TemplateTypeResource  TemplateType = "Resource"
@@ -61,6 +62,7 @@ type NodeType string
 // Node types
 const (
 	NodeTypePod       NodeType = "Pod"
+	NodeTypeContainer NodeType = "Container"
 	NodeTypeSteps     NodeType = "Steps"
 	NodeTypeStepGroup NodeType = "StepGroup"
 	NodeTypeDAG       NodeType = "DAG"
@@ -190,12 +192,23 @@ type TTLStrategy struct {
 	SecondsAfterFailure *int32 `json:"secondsAfterFailure,omitempty" protobuf:"bytes,3,opt,name=secondsAfterFailure"`
 }
 
+type Templates []Template
+
+func (t Templates) FindByName(name string) *Template {
+	for _, x := range t {
+		if x.Name == name {
+			return &x
+		}
+	}
+	return nil
+}
+
 // WorkflowSpec is the specification of a Workflow.
 type WorkflowSpec struct {
 	// Templates is a list of workflow templates used in a workflow
 	// +patchStrategy=merge
 	// +patchMergeKey=name
-	Templates []Template `json:"templates,omitempty" patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,1,opt,name=templates"`
+	Templates Templates `json:"templates,omitempty" patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,1,opt,name=templates"`
 
 	// Entrypoint is a template reference to the starting point of the workflow.
 	Entrypoint string `json:"entrypoint,omitempty" protobuf:"bytes,2,opt,name=entrypoint"`
@@ -507,6 +520,8 @@ type Template struct {
 
 	// Container is the main container image to run in the pod
 	Container *apiv1.Container `json:"container,omitempty" protobuf:"bytes,12,opt,name=container"`
+
+	Pod *PodTemplate `json:"pod,omitempty" protobuf:"bytes,39,opt,name=pod"`
 
 	// Script runs a portion of code against an interpreter
 	Script *ScriptTemplate `json:"script,omitempty" protobuf:"bytes,13,opt,name=script"`
@@ -2105,6 +2120,9 @@ func (tmpl *Template) GetType() TemplateType {
 	if tmpl.Container != nil {
 		return TemplateTypeContainer
 	}
+	if tmpl.Pod != nil {
+		return TemplateTypePod
+	}
 	if tmpl.Steps != nil {
 		return TemplateTypeSteps
 	}
@@ -2126,7 +2144,7 @@ func (tmpl *Template) GetType() TemplateType {
 // IsPodType returns whether or not the template is a pod type
 func (tmpl *Template) IsPodType() bool {
 	switch tmpl.GetType() {
-	case TemplateTypeContainer, TemplateTypeScript, TemplateTypeResource:
+	case TemplateTypeContainer, TemplateTypePod, TemplateTypeScript, TemplateTypeResource:
 		return true
 	}
 	return false
@@ -2135,10 +2153,50 @@ func (tmpl *Template) IsPodType() bool {
 // IsLeaf returns whether or not the template is a leaf
 func (tmpl *Template) IsLeaf() bool {
 	switch tmpl.GetType() {
-	case TemplateTypeContainer, TemplateTypeScript, TemplateTypeResource:
+	case TemplateTypeContainer, TemplateTypePod, TemplateTypeScript, TemplateTypeResource:
 		return true
 	}
 	return false
+}
+
+func (tmpl *Template) IsUserContainerName(containerName string) bool {
+	for _, c := range tmpl.GetUserContainerNames() {
+		if c == containerName {
+			return true
+		}
+	}
+	return false
+}
+
+func (tmpl *Template) GetUserContainerNames() []string {
+	if tmpl != nil && tmpl.Pod != nil {
+		out := make([]string, 0)
+		for _, c := range tmpl.Pod.GetContainers() {
+			out = append(out, c.Name)
+		}
+		return out
+	} else {
+		return []string{"main"}
+	}
+}
+
+func (tmpl *Template) GetVolumeMounts() []apiv1.VolumeMount {
+	if tmpl.Container != nil {
+		return tmpl.Container.VolumeMounts
+	} else if tmpl.Script != nil {
+		return tmpl.Script.Container.VolumeMounts
+	} else if tmpl.Pod != nil {
+		return tmpl.Pod.VolumeMounts
+	}
+	return nil
+}
+
+func (tmpl *Template) HasOutput() bool {
+	return tmpl.Script != nil || tmpl.Container != nil || tmpl.Pod.HasContainerNamed("main")
+}
+
+func (tmpl *Template) HasLogs() bool {
+	return tmpl.HasOutput() || tmpl.Resource != nil
 }
 
 // DAGTemplate is a template subtype for directed acyclic graph templates

@@ -1,0 +1,16 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: sequence-
+  labels:
+    argo-e2e: "true"
+spec:
+  entrypoint: main
+  templates:
+    - name: main
+      pod:
+        sequence:
+          - name: ctr-0
+            image: argoproj/argosay:v2
+          - name: ctr-1
+            image: argoproj/argosay:v2

@@ -39,17 +39,9 @@ import (
 // user specified volumeMounts in the template, and returns the deepest volumeMount
 // (if any). A return value of nil indicates the path is not under any volumeMount.
 func FindOverlappingVolume(tmpl *wfv1.Template, path string) *apiv1.VolumeMount {
-	var volMounts []apiv1.VolumeMount
-	if tmpl.Container != nil {
-		volMounts = tmpl.Container.VolumeMounts
-	} else if tmpl.Script != nil {
-		volMounts = tmpl.Script.VolumeMounts
-	} else {
-		return nil
-	}
 	var volMnt *apiv1.VolumeMount
 	deepestLen := 0
-	for _, mnt := range volMounts {
+	for _, mnt := range tmpl.GetVolumeMounts() {
 		if path != mnt.MountPath && !strings.HasPrefix(path, mnt.MountPath+"/") {
 			continue
 		}
@@ -64,22 +56,6 @@ func FindOverlappingVolume(tmpl *wfv1.Template, path string) *apiv1.VolumeMount 
 // KillPodContainer is a convenience function to issue a kill signal to a container in a pod
 // It gives a 15 second grace period before issuing SIGKILL
 // NOTE: this only works with containers that have sh
-func KillPodContainer(restConfig *rest.Config, namespace string, pod string, container string) error {
-	exec, err := ExecPodContainer(restConfig, namespace, pod, container, true, true, "sh", "-c", "kill 1; sleep 15; kill -9 1")
-	if err != nil {
-		return err
-	}
-	// Stream will initiate the command. We do want to wait for the result so we launch as a goroutine
-	go func() {
-		_, _, err := GetExecutorOutput(exec)
-		if err != nil {
-			log.Warnf("Kill command failed (expected to fail with 137): %v", err)
-			return
-		}
-		log.Infof("Kill of %s (%s) successfully issued", pod, container)
-	}()
-	return nil
-}
 
 // ContainerLogStream returns an io.ReadCloser for a container's log stream using the websocket
 // interface. This was implemented in the hopes that we could selectively choose stdout from stderr,
@@ -87,48 +63,6 @@ func KillPodContainer(restConfig *rest.Config, namespace string, pod string, con
 // stdout from stderr using the K8s API server, so this function is unused, instead preferring the
 // pod logs interface from client-go. It's left as a reference for when issue #28167 is eventually
 // resolved.
-func ContainerLogStream(config *rest.Config, namespace string, pod string, container string) (io.ReadCloser, error) {
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		return nil, errors.InternalWrapError(err)
-	}
-	logRequest := clientset.CoreV1().RESTClient().Get().
-		Resource("pods").
-		Name(pod).
-		Namespace(namespace).
-		SubResource("log").
-		Param("container", container)
-	u := logRequest.URL()
-	switch u.Scheme {
-	case "https":
-		u.Scheme = "wss"
-	case "http":
-		u.Scheme = "ws"
-	default:
-		return nil, errors.Errorf("", "Malformed URL %s", u.String())
-	}
-
-	log.Info(u.String())
-	wsrc := websocketReadCloser{
-		&bytes.Buffer{},
-	}
-
-	wrappedRoundTripper, err := roundTripperFromConfig(config, wsrc.WebsocketCallback)
-	if err != nil {
-		return nil, errors.InternalWrapError(err)
-	}
-
-	// Send the request and let the callback do its work
-	req := &http.Request{
-		Method: http.MethodGet,
-		URL:    u,
-	}
-	_, err = wrappedRoundTripper.RoundTrip(req)
-	if err != nil && !websocket.IsCloseError(err, websocket.CloseNormalClosure) {
-		return nil, errors.InternalWrapError(err)
-	}
-	return &wsrc, nil
-}
 
 type RoundTripCallback func(conn *websocket.Conn, resp *http.Response, err error) error
 
@@ -143,62 +77,6 @@ func (d *WebsocketRoundTripper) RoundTrip(r *http.Request) (*http.Response, erro
 		defer util.Close(conn)
 	}
 	return resp, d.Do(conn, resp, err)
-}
-
-func (w *websocketReadCloser) WebsocketCallback(ws *websocket.Conn, resp *http.Response, err error) error {
-	if err != nil {
-		if resp != nil && resp.StatusCode != http.StatusOK {
-			buf := new(bytes.Buffer)
-			_, _ = buf.ReadFrom(resp.Body)
-			return errors.InternalErrorf("Can't connect to log endpoint (%d): %s", resp.StatusCode, buf.String())
-		}
-		return errors.InternalErrorf("Can't connect to log endpoint: %s", err.Error())
-	}
-
-	for {
-		_, body, err := ws.ReadMessage()
-		if len(body) > 0 {
-			//log.Debugf("%d: %s", msgType, string(body))
-			_, writeErr := w.Write(body)
-			if writeErr != nil {
-				return writeErr
-			}
-		}
-		if err != nil {
-			if err == io.EOF {
-				log.Infof("websocket closed: %v", err)
-				return nil
-			}
-			log.Warnf("websocket error: %v", err)
-			return err
-		}
-	}
-}
-
-func roundTripperFromConfig(config *rest.Config, callback RoundTripCallback) (http.RoundTripper, error) {
-	tlsConfig, err := rest.TLSConfigFor(config)
-	if err != nil {
-		return nil, err
-	}
-	// Create a roundtripper which will pass in the final underlying websocket connection to a callback
-	wsrt := &WebsocketRoundTripper{
-		Do: callback,
-		Dialer: &websocket.Dialer{
-			Proxy:           http.ProxyFromEnvironment,
-			TLSClientConfig: tlsConfig,
-		},
-	}
-	// Make sure we inherit all relevant security headers
-	return rest.HTTPWrappersForConfig(config, wsrt)
-}
-
-type websocketReadCloser struct {
-	*bytes.Buffer
-}
-
-func (w *websocketReadCloser) Close() error {
-	//return w.conn.Close()
-	return nil
 }
 
 // ExecPodContainer runs a command in a container in a pod and returns the remotecommand.Executor
@@ -224,6 +102,7 @@ func ExecPodContainer(restConfig *rest.Config, namespace string, pod string, con
 
 	log.Info(execRequest.URL())
 	exec, err := remotecommand.NewSPDYExecutor(restConfig, "POST", execRequest.URL())
+	log.WithError(err).Info("command executed")
 	if err != nil {
 		return nil, errors.InternalWrapError(err)
 	}
@@ -458,11 +337,6 @@ func AddPodAnnotation(ctx context.Context, c kubernetes.Interface, podName, name
 		}
 	}
 	return addPodMetadata(ctx, c, "annotations", podName, namespace, key, value, backoff)
-}
-
-// AddPodLabel adds an label to pod
-func AddPodLabel(ctx context.Context, c kubernetes.Interface, podName, namespace, key, value string) error {
-	return addPodMetadata(ctx, c, "labels", podName, namespace, key, value, defaultPatchBackoff)
 }
 
 // addPodMetadata is helper to either add a pod label or annotation to the pod

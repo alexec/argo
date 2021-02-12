@@ -17,16 +17,22 @@ var (
 		met, _ := None(K8SAPI, Kubelet)(s)
 		return met, "base layer artifact support"
 	}
+	StopTerminate Need = func(s *E2ESuite) (bool, string) {
+		met, _ := None(K8SAPI, Kubelet)(s)
+		return met, "stop/terminate" // these do not work in tests, they use `sh -c "kill -15 1"`, but argosay has no sh command it it
+	}
 	Offloading Need = func(s *E2ESuite) (bool, string) {
 		return s.Persistence.IsEnabled(), "offloading enabled"
 	}
 	WorkflowArchive Need = func(s *E2ESuite) (bool, string) {
 		return s.Persistence.IsEnabled(), "workflow archive enabled"
 	}
-	Docker  = Executor("docker")
-	K8SAPI  = Executor("k8sapi")
-	Kubelet = Executor("kubelet")
-	PNS     = Executor("pns")
+	PodTemplate = Emissary
+	Docker      = Executor("docker")
+	Emissary    = Executor("emissary")
+	K8SAPI      = Executor("k8sapi")
+	Kubelet     = Executor("kubelet")
+	PNS         = Executor("pns")
 )
 
 func Executor(e string) Need {

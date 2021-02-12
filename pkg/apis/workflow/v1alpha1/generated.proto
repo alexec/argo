@@ -601,6 +601,12 @@ message MutexStatus {
   repeated MutexHolding waiting = 2;
 }
 
+message Node {
+  optional Task container = 1;
+
+  repeated string dependencies = 2;
+}
+
 // NodeStatus contains status information about an individual node in the workflow
 message NodeStatus {
   // ID is a unique identifier of a node within the worklow
@@ -777,6 +783,14 @@ message Parameter {
 message PodGC {
   // Strategy is the strategy to use. One of "OnPodCompletion", "OnPodSuccess", "OnWorkflowCompletion", "OnWorkflowSuccess"
   optional string strategy = 1;
+}
+
+message PodTemplate {
+  repeated Node graph = 1;
+
+  repeated Task sequence = 2;
+
+  repeated k8s.io.api.core.v1.VolumeMount volumeMounts = 3;
 }
 
 // Prometheus is a prometheus metric to be emitted
@@ -1041,6 +1055,10 @@ message TarStrategy {
   optional int32 compressionLevel = 1;
 }
 
+message Task {
+  optional k8s.io.api.core.v1.Container container = 1;
+}
+
 // Template is a reusable and composable unit of execution in a workflow
 message Template {
   // Name is the name of the template
@@ -1071,6 +1089,8 @@ message Template {
 
   // Container is the main container image to run in the pod
   optional k8s.io.api.core.v1.Container container = 12;
+
+  optional PodTemplate pod = 39;
 
   // Script runs a portion of code against an interpreter
   optional ScriptTemplate script = 13;
