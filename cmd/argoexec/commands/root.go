@@ -7,7 +7,6 @@ import (
 
 	"github.com/argoproj/pkg/cli"
 	kubecli "github.com/argoproj/pkg/kube/cli"
-	"github.com/prometheus/common/version"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/kubernetes"
@@ -76,8 +75,9 @@ func NewRootCommand() *cobra.Command {
 }
 
 func initExecutor() *executor.WorkflowExecutor {
+	version := argo.GetVersion()
 	executorType := os.Getenv(common.EnvVarContainerRuntimeExecutor)
-	log.WithFields(log.Fields{"version": argo.GetVersion().Version, "executorType": executorType}).Info("Starting Workflow Executor")
+	log.WithFields(log.Fields{"version": version, "executorType": executorType}).Info("Starting Workflow Executor")
 	config, err := clientConfig.ClientConfig()
 	config = restclient.AddUserAgent(config, fmt.Sprintf("argo-workflows/%s executor/%s", version.Version, executorType))
 	checkErr(err)

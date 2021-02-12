@@ -1315,7 +1315,6 @@ func (woc *wfOperationCtx) inferFailedReason(pod *apiv1.Pod) (wfv1.NodePhase, st
 		default:
 			return 3
 		}
-		return 3
 	}
 
 	ctrs := append(pod.Status.InitContainerStatuses, pod.Status.ContainerStatuses...)

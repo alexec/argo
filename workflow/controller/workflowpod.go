@@ -28,7 +28,6 @@ import (
 	"github.com/argoproj/argo-workflows/v3/workflow/util"
 )
 
-// Reusable k8s pod spec portions used in workflow pods
 var (
 	// volumePodMetadata makes available the pod metadata available as a file
 	// to the executor's init and sidecar containers. Specifically, the template
@@ -54,7 +53,7 @@ var (
 		MountPath: common.PodMetadataMountPath,
 	}
 	volumeVarArgo = apiv1.Volume{
-		Name: "var-argo",
+		Name: "var-run-argo",
 		VolumeSource: apiv1.VolumeSource{
 			EmptyDir: &apiv1.EmptyDirVolumeSource{},
 		},
@@ -304,17 +303,21 @@ func (woc *wfOperationCtx) createWorkflowPod2(ctx context.Context, nodeName stri
 	addOutputArtifactsVolumes(pod, tmpl)
 
 	if woc.GetContainerRuntimeExecutor() == common.ContainerRuntimeExecutorEmissary && tmpl.GetType() != wfv1.TemplateTypeResource {
+		for i, c := range pod.Spec.InitContainers {
+			c.VolumeMounts = append(c.VolumeMounts, volumeMountVarArgo)
+			pod.Spec.InitContainers[i] = c
+		}
 		for i, c := range pod.Spec.Containers {
-			if c.Name != "wait" {
+			if c.Name != common.WaitContainerName {
 				if len(c.Command) == 0 {
-					c.Command = imageCommandIndex[c.Image]
+					c.Command = woc.getCommandFor(c.Image)
 				}
 				if len(c.Command) == 0 {
 					return nil, fmt.Errorf("must specify the command when using the entrypoint executor; determine this using `docker image inspect -f '{{.Config.Cmd}}' %s` or `docker image inspect -f '{{.Config.Entrypoint}}' %s`", c.Image, c.Image)
 				}
 				c.Command = append([]string{"/var/run/argo/argoexec", "emissary", "--"}, c.Command...)
-				c.VolumeMounts = append(c.VolumeMounts, volumeMountVarArgo)
 			}
+			c.VolumeMounts = append(c.VolumeMounts, volumeMountVarArgo)
 			pod.Spec.Containers[i] = c
 		}
 	}
@@ -432,6 +435,13 @@ func (woc *wfOperationCtx) createWorkflowPod2(ctx context.Context, nodeName stri
 	return created, nil
 }
 
+func (woc *wfOperationCtx) getCommandFor(image string) []string {
+	if woc.controller.Config.ImageCommandIndex == nil {
+		return nil
+	}
+	return woc.controller.Config.ImageCommandIndex[image]
+}
+
 // substitutePodParams returns a pod spec with parameter references substituted as well as pod.name
 func substitutePodParams(pod *apiv1.Pod, globalParams common.Parameters, tmpl *wfv1.Template) (*apiv1.Pod, error) {
 	podParams := globalParams.DeepCopy()
@@ -517,33 +527,27 @@ func containerIsPrivileged(ctr *apiv1.Container) bool {
 }
 
 func (woc *wfOperationCtx) createEnvVars() []apiv1.EnvVar {
-	var execEnvVars []apiv1.EnvVar
-	execEnvVars = append(execEnvVars, apiv1.EnvVar{
-		Name: common.EnvVarPodName,
-		ValueFrom: &apiv1.EnvVarSource{
-			FieldRef: &apiv1.ObjectFieldSelector{
-				APIVersion: "v1",
-				FieldPath:  "metadata.name",
+	execEnvVars := []apiv1.EnvVar{
+		{
+			Name: common.EnvVarPodName,
+			ValueFrom: &apiv1.EnvVarSource{
+				FieldRef: &apiv1.ObjectFieldSelector{
+					APIVersion: "v1",
+					FieldPath:  "metadata.name",
+				},
 			},
 		},
-	})
+		{
+			Name:  common.EnvVarContainerRuntimeExecutor,
+			Value: woc.controller.GetContainerRuntimeExecutor(),
+		},
+	}
 	if woc.controller.Config.Executor != nil {
 		execEnvVars = append(execEnvVars, woc.controller.Config.Executor.Env...)
 	}
-	switch woc.controller.GetContainerRuntimeExecutor() {
-	case common.ContainerRuntimeExecutorK8sAPI, common.ContainerRuntimeExecutorPNS, common.ContainerRuntimeExecutorEmissary:
-		execEnvVars = append(execEnvVars,
-			apiv1.EnvVar{
-				Name:  common.EnvVarContainerRuntimeExecutor,
-				Value: woc.controller.GetContainerRuntimeExecutor(),
-			},
-		)
+	switch woc.GetContainerRuntimeExecutor() {
 	case common.ContainerRuntimeExecutorKubelet:
 		execEnvVars = append(execEnvVars,
-			apiv1.EnvVar{
-				Name:  common.EnvVarContainerRuntimeExecutor,
-				Value: woc.controller.GetContainerRuntimeExecutor(),
-			},
 			apiv1.EnvVar{
 				Name: common.EnvVarDownwardAPINodeIP,
 				ValueFrom: &apiv1.EnvVarSource{
@@ -631,11 +635,6 @@ func (woc *wfOperationCtx) newExecContainer(name string, tmpl *wfv1.Template) *a
 			SubPath:   woc.controller.Config.KubeConfig.SecretKey,
 		})
 		exec.Args = append(exec.Args, "--kubeconfig="+path)
-	}
-
-	switch woc.GetContainerRuntimeExecutor() {
-	case common.ContainerRuntimeExecutorEmissary:
-		exec.VolumeMounts = append(exec.VolumeMounts, volumeMountVarArgo)
 	}
 
 	executorServiceAccountName := ""
