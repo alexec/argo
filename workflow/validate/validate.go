@@ -940,7 +940,6 @@ func (ctx *templateValidationCtx) validateBaseImageOutputs(tmpl *wfv1.Template) 
 					}
 				}
 			}
-
 		}
 	case common.ContainerRuntimeExecutorK8sAPI, common.ContainerRuntimeExecutorKubelet:
 		// for kubelet/k8s fail validation if we detect artifact is copied from base image layer
