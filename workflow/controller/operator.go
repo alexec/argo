@@ -261,7 +261,6 @@ func (woc *wfOperationCtx) operate(ctx context.Context) {
 
 		// Validate the execution wfSpec
 		wfConditions, err := validate.ValidateWorkflow(wftmplGetter, cwftmplGetter, woc.wf, validateOpts)
-
 		if err != nil {
 			msg := fmt.Sprintf("invalid spec: %s", err.Error())
 			woc.markWorkflowFailed(ctx, msg)
@@ -292,7 +291,7 @@ func (woc *wfOperationCtx) operate(ctx context.Context) {
 		woc.workflowDeadline = woc.getWorkflowDeadline()
 		err := woc.podReconciliation(ctx)
 		if err == nil {
-			err = woc.failSuspendedAndPendingNodesAfterDeadlineOrShutdown()
+			woc.failSuspendedAndPendingNodesAfterDeadlineOrShutdown()
 		}
 		if err != nil {
 			woc.log.WithError(err).WithField("workflow", woc.wf.ObjectMeta.Name).Error("workflow timeout")
@@ -1002,8 +1001,8 @@ func (woc *wfOperationCtx) shouldPrintPodSpec(node wfv1.NodeStatus) bool {
 		(woc.controller.Config.PodSpecLogStrategy.FailedPod && node.FailedOrError())
 }
 
-//fails any suspended and pending nodes if the workflow deadline has passed
-func (woc *wfOperationCtx) failSuspendedAndPendingNodesAfterDeadlineOrShutdown() error {
+// fails any suspended and pending nodes if the workflow deadline has passed
+func (woc *wfOperationCtx) failSuspendedAndPendingNodesAfterDeadlineOrShutdown() {
 	deadlineExceeded := woc.workflowDeadline != nil && time.Now().UTC().After(*woc.workflowDeadline)
 	if woc.execWf.Spec.Shutdown != "" || deadlineExceeded {
 		for _, node := range woc.wf.Status.Nodes {
@@ -1018,13 +1017,12 @@ func (woc *wfOperationCtx) failSuspendedAndPendingNodesAfterDeadlineOrShutdown()
 			}
 		}
 	}
-	return nil
 }
 
 // countActivePods counts the number of active (Pending/Running) pods.
 // Optionally restricts it to a template invocation (boundaryID)
 func (woc *wfOperationCtx) countActivePods(boundaryIDs ...string) int64 {
-	var boundaryID = ""
+	boundaryID := ""
 	if len(boundaryIDs) > 0 {
 		boundaryID = boundaryIDs[0]
 	}
@@ -1051,7 +1049,7 @@ func (woc *wfOperationCtx) countActivePods(boundaryIDs ...string) int64 {
 
 // countActiveChildren counts the number of active (Pending/Running) children nodes of parent parentName
 func (woc *wfOperationCtx) countActiveChildren(boundaryIDs ...string) int64 {
-	var boundaryID = ""
+	boundaryID := ""
 	if len(boundaryIDs) > 0 {
 		boundaryID = boundaryIDs[0]
 	}
@@ -1419,7 +1417,7 @@ func (woc *wfOperationCtx) createPVCs(ctx context.Context) error {
 			}
 		}
 
-		//continue
+		// continue
 		if err != nil {
 			return err
 		}
@@ -1803,7 +1801,7 @@ func (woc *wfOperationCtx) executeTemplate(ctx context.Context, nodeName string,
 	// Swap the node back to retry node
 	if retryNodeName != "" {
 		retryNode := woc.wf.GetNodeByName(retryNodeName)
-		if !retryNode.Fulfilled() && node.Fulfilled() { //if the retry child has completed we need to update outself
+		if !retryNode.Fulfilled() && node.Fulfilled() { // if the retry child has completed we need to update outself
 			node, err = woc.executeTemplate(ctx, retryNodeName, orgTmpl, tmplCtx, args, opts)
 			if err != nil {
 				return woc.markNodeError(node.Name, err), err
@@ -2315,7 +2313,6 @@ func getTemplateOutputsFromScope(tmpl *wfv1.Template, scope *wfScope) (*wfv1.Out
 
 // hasOutputResultRef will check given template output has any reference
 func hasOutputResultRef(name string, parentTmpl *wfv1.Template) bool {
-
 	var variableRefName string
 	if parentTmpl.DAG != nil {
 		variableRefName = "{{tasks." + name + ".outputs.result}}"
@@ -2444,7 +2441,7 @@ func (woc *wfOperationCtx) addOutputsToGlobalScope(outputs *wfv1.Outputs) {
 		woc.addParamToGlobalScope(param)
 	}
 	for _, art := range outputs.Artifacts {
-		woc.addArtifactToGlobalScope(art, nil)
+		woc.addArtifactToGlobalScope(art)
 	}
 }
 
@@ -2464,11 +2461,13 @@ func parseLoopIndex(s string) int {
 	}
 	return val
 }
+
 func (n loopNodes) Less(i, j int) bool {
 	left := parseLoopIndex(n[i].DisplayName)
 	right := parseLoopIndex(n[j].DisplayName)
 	return left < right
 }
+
 func (n loopNodes) Swap(i, j int) {
 	n[i], n[j] = n[j], n[i]
 }
@@ -2569,7 +2568,7 @@ func (woc *wfOperationCtx) addParamToGlobalScope(param wfv1.Parameter) {
 
 // addArtifactToGlobalScope exports any desired node outputs to the global scope
 // Optionally adds to a local scope if supplied
-func (woc *wfOperationCtx) addArtifactToGlobalScope(art wfv1.Artifact, scope *wfScope) {
+func (woc *wfOperationCtx) addArtifactToGlobalScope(art wfv1.Artifact) {
 	if art.GlobalName == "" {
 		return
 	}
@@ -2583,9 +2582,6 @@ func (woc *wfOperationCtx) addArtifactToGlobalScope(art wfv1.Artifact, scope *wf
 				art.Path = ""
 				if !reflect.DeepEqual(woc.wf.Status.Outputs.Artifacts[i], art) {
 					woc.wf.Status.Outputs.Artifacts[i] = art
-					if scope != nil {
-						scope.addArtifactToScope(globalArtName, art)
-					}
 					woc.log.Infof("overwriting %s: %v", globalArtName, art)
 					woc.updated = true
 				}
@@ -2601,9 +2597,6 @@ func (woc *wfOperationCtx) addArtifactToGlobalScope(art wfv1.Artifact, scope *wf
 	art.Path = ""
 	woc.log.Infof("setting %s: %v", globalArtName, art)
 	woc.wf.Status.Outputs.Artifacts = append(woc.wf.Status.Outputs.Artifacts, art)
-	if scope != nil {
-		scope.addArtifactToScope(globalArtName, art)
-	}
 	woc.updated = true
 }
 
@@ -2629,7 +2622,6 @@ func (woc *wfOperationCtx) addChildNode(parent string, child string) {
 
 // executeResource is runs a kubectl command against a manifest
 func (woc *wfOperationCtx) executeResource(ctx context.Context, nodeName string, templateScope string, tmpl *wfv1.Template, orgTmpl wfv1.TemplateReferenceHolder, opts *executeTemplateOpts) (*wfv1.NodeStatus, error) {
-
 	node := woc.wf.GetNodeByName(nodeName)
 
 	if node == nil {
@@ -2861,7 +2853,7 @@ func (woc *wfOperationCtx) substituteParamsInVolumes(params map[string]string) e
 	}
 	fstTmpl, err := fasttemplate.NewTemplate(string(volumesBytes), "{{", "}}")
 	if err != nil {
-		return fmt.Errorf("unable to parse argo varaible: %w", err)
+		return fmt.Errorf("unable to parse argo variable: %w", err)
 	}
 	newVolumesStr, err := common.Replace(fstTmpl, params, true)
 	if err != nil {
@@ -2933,7 +2925,7 @@ func (woc *wfOperationCtx) computeMetrics(metricList []*wfv1.Prometheus, localSc
 		}
 		fstTmpl, err := fasttemplate.NewTemplate(string(metricTmplBytes), "{{", "}}")
 		if err != nil {
-			woc.reportMetricEmissionError(fmt.Sprintf("unable to parse argo varaible for metric '%s': %s", metricTmpl.Name, err))
+			woc.reportMetricEmissionError(fmt.Sprintf("unable to parse argo variable for metric '%s': %s", metricTmpl.Name, err))
 			continue
 		}
 		replacedValue, err := common.Replace(fstTmpl, localScope, false)
@@ -2993,7 +2985,7 @@ func (woc *wfOperationCtx) computeMetrics(metricList []*wfv1.Prometheus, localSc
 			// Finally substitute value parameters
 			fstTmpl, err = fasttemplate.NewTemplate(metricSpec.GetValueString(), "{{", "}}")
 			if err != nil {
-				woc.reportMetricEmissionError(fmt.Sprintf("unable to parse argo varaible for metric '%s': %s", metricTmpl.Name, err))
+				woc.reportMetricEmissionError(fmt.Sprintf("unable to parse argo variable for metric '%s': %s", metricTmpl.Name, err))
 				continue
 			}
 			replacedValue, err := common.Replace(fstTmpl, localScope, false)
@@ -3032,7 +3024,6 @@ func (woc *wfOperationCtx) reportMetricEmissionError(errorString string) {
 }
 
 func (woc *wfOperationCtx) createPDBResource(ctx context.Context) error {
-
 	if woc.execWf.Spec.PodDisruptionBudget == nil {
 		return nil
 	}
@@ -3196,7 +3187,6 @@ func (woc *wfOperationCtx) setStoredWfSpec() error {
 		}
 		if mergedWf.Spec.String() != woc.wf.Status.StoredWorkflowSpec.String() {
 			return fmt.Errorf("workflowTemplateRef reference may not change during execution when the controller is in reference mode")
-
 		}
 	}
 	return nil

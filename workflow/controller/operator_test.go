@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/argoproj/pkg/strftime"
-
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
@@ -1265,7 +1264,7 @@ func TestWorkflowStepRetry(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, 1, len(pods.Items))
 
-	//complete the first pod
+	// complete the first pod
 	makePodsPhase(ctx, woc, apiv1.PodSucceeded)
 	wf, err = wfcset.Get(ctx, wf.ObjectMeta.Name, metav1.GetOptions{})
 	assert.Nil(t, err)
@@ -1284,7 +1283,7 @@ func TestWorkflowStepRetry(t *testing.T) {
 		assert.Equal(t, "cowsay success", pods.Items[0].Spec.Containers[1].Args[0])
 		assert.Equal(t, "cowsay failure", pods.Items[1].Spec.Containers[1].Args[0])
 
-		//verify that after the cowsay failure pod failed, we are retrying cowsay success
+		// verify that after the cowsay failure pod failed, we are retrying cowsay success
 		assert.Equal(t, "cowsay success", pods.Items[2].Spec.Containers[1].Args[0])
 	}
 }
@@ -1662,7 +1661,6 @@ func TestSuspendWithDeadline(t *testing.T) {
 		}
 	}
 	assert.True(t, found)
-
 }
 
 var sequence = `
@@ -2229,7 +2227,6 @@ func TestAddGlobalParamToScope(t *testing.T) {
 	assert.Equal(t, param.GlobalName, woc.wf.Status.Outputs.Parameters[1].Name)
 	assert.Equal(t, newValue, woc.wf.Status.Outputs.Parameters[1].Value)
 	assert.Equal(t, newValue.String(), woc.globalParams["workflow.outputs.parameters.global-param2"])
-
 }
 
 func TestAddGlobalArtifactToScope(t *testing.T) {
@@ -2246,19 +2243,19 @@ func TestAddGlobalArtifactToScope(t *testing.T) {
 		},
 	}
 	// Make sure if the artifact is not global, don't add to scope
-	woc.addArtifactToGlobalScope(art, nil)
+	woc.addArtifactToGlobalScope(art)
 	assert.Nil(t, woc.wf.Status.Outputs)
 
 	// Now mark it as global. Verify it is added to workflow outputs
 	art.GlobalName = "global-art"
-	woc.addArtifactToGlobalScope(art, nil)
+	woc.addArtifactToGlobalScope(art)
 	assert.Equal(t, 1, len(woc.wf.Status.Outputs.Artifacts))
 	assert.Equal(t, art.GlobalName, woc.wf.Status.Outputs.Artifacts[0].Name)
 	assert.Equal(t, "some/key", woc.wf.Status.Outputs.Artifacts[0].S3.Key)
 
 	// Change the value and verify update is reflected
 	art.S3.Key = "new/key"
-	woc.addArtifactToGlobalScope(art, nil)
+	woc.addArtifactToGlobalScope(art)
 	assert.Equal(t, 1, len(woc.wf.Status.Outputs.Artifacts))
 	assert.Equal(t, art.GlobalName, woc.wf.Status.Outputs.Artifacts[0].Name)
 	assert.Equal(t, "new/key", woc.wf.Status.Outputs.Artifacts[0].S3.Key)
@@ -2266,7 +2263,7 @@ func TestAddGlobalArtifactToScope(t *testing.T) {
 	// Add a new global artifact
 	art.GlobalName = "global-art2"
 	art.S3.Key = "new/new/key"
-	woc.addArtifactToGlobalScope(art, nil)
+	woc.addArtifactToGlobalScope(art)
 	assert.Equal(t, 2, len(woc.wf.Status.Outputs.Artifacts))
 	assert.Equal(t, art.GlobalName, woc.wf.Status.Outputs.Artifacts[1].Name)
 	assert.Equal(t, "new/new/key", woc.wf.Status.Outputs.Artifacts[1].S3.Key)
@@ -2600,7 +2597,6 @@ spec:
 `
 
 func TestResolveStatuses(t *testing.T) {
-
 	cancel, controller := newController()
 	defer cancel()
 	wfcset := controller.wfclientset.ArgoprojV1alpha1().Workflows("")
@@ -2847,7 +2843,6 @@ spec:
         cat /dev/urandom | od -N2 -An -i | awk -v f=1 -v r=100 '{printf "%i\n", f + r * $1 / 65536}'`
 
 func TestStepWFGetNodeName(t *testing.T) {
-
 	cancel, controller := newController()
 	defer cancel()
 	wfcset := controller.wfclientset.ArgoprojV1alpha1().Workflows("")
@@ -2873,7 +2868,6 @@ func TestStepWFGetNodeName(t *testing.T) {
 }
 
 func TestDAGWFGetNodeName(t *testing.T) {
-
 	cancel, controller := newController()
 	defer cancel()
 	wfcset := controller.wfclientset.ArgoprojV1alpha1().Workflows("")
@@ -4415,7 +4409,7 @@ spec:
 `
 
 func TestConfigMapCacheLoadOperate(t *testing.T) {
-	var sampleConfigMapCacheEntry = apiv1.ConfigMap{
+	sampleConfigMapCacheEntry := apiv1.ConfigMap{
 		Data: map[string]string{
 			"hi-there-world": `{"nodeID":"memoized-simple-workflow-5wj2p","outputs":{"parameters":[{"name":"hello","value":"foobar","valueFrom":{"path":"/tmp/hello_world.txt"}}],"artifacts":[{"name":"main-logs","archiveLogs":true,"s3":{"endpoint":"minio:9000","bucket":"my-bucket","insecure":true,"accessKeySecret":{"name":"my-minio-cred","key":"accesskey"},"secretKeySecret":{"name":"my-minio-cred","key":"secretkey"},"key":"memoized-simple-workflow-5wj2p/memoized-simple-workflow-5wj2p/main.log"}}]},"creationTimestamp":"2020-09-21T18:12:56Z"}`,
 		},
@@ -4544,7 +4538,7 @@ func TestConfigMapCacheLoadOperateMaxAge(t *testing.T) {
 }
 
 func TestConfigMapCacheLoadNilOutputs(t *testing.T) {
-	var sampleConfigMapCacheEntry = apiv1.ConfigMap{
+	sampleConfigMapCacheEntry := apiv1.ConfigMap{
 		Data: map[string]string{
 			"hi-there-world": `{"ExpiresAt":"2020-06-18T17:11:05Z","NodeID":"memoize-abx4124-123129321123","Outputs":{}}`,
 		},
@@ -4735,7 +4729,6 @@ func TestCheckForbiddenErrorAndResbmitAllowed(t *testing.T) {
 		assert.Error(t, err)
 		assert.Nil(t, node)
 	})
-
 }
 
 func TestResubmitMemoization(t *testing.T) {
@@ -4809,7 +4802,7 @@ spec:
 	defer cancel()
 	woc := newWorkflowOperationCtx(wf, controller)
 
-	// reconcille
+	// reconcile
 	ctx := context.Background()
 	woc.operate(ctx)
 	assert.Equal(t, wfv1.WorkflowRunning, woc.wf.Status.Phase)
@@ -4817,7 +4810,7 @@ spec:
 	// make all created pods as successful
 	makePodsPhase(ctx, woc, apiv1.PodSucceeded, withOutputs(`{"parameters": [{"name": "my-param"}]}`))
 
-	// reconcille
+	// reconcile
 	woc = newWorkflowOperationCtx(woc.wf, controller)
 	woc.operate(ctx)
 	assert.Equal(t, wfv1.WorkflowSucceeded, woc.wf.Status.Phase)
@@ -5164,7 +5157,6 @@ spec:
 `
 
 func TestTemplateTimeoutDuration(t *testing.T) {
-
 	t.Run("Step Template Deadline", func(t *testing.T) {
 		wf := unmarshalWF(stepTimeoutWf)
 		cancel, controller := newController(wf)
